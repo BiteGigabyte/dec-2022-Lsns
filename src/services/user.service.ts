@@ -3,9 +3,61 @@ import { User } from "../models/User.mode";
 import { userRepository } from "../repositories/user.repository";
 import { IUser } from "../types/user.type";
 
+export interface IQuery {
+  page: string;
+  limit: string;
+  sortedBy: string;
+
+  [key: string]: string;
+}
+
+export interface IPaginationResponse<T> {
+  page: number;
+  perPage: number;
+  itemsCount: number;
+  itemsFound: number;
+  data: T[];
+}
+
 class UserService {
   public async findAll(): Promise<IUser[]> {
     return await User.find();
+  }
+
+  public async findAllWithPagination(
+    query: IQuery
+  ): Promise<IPaginationResponse<IUser>> {
+    try {
+      const queryStr = JSON.stringify(query);
+      const queryObj = JSON.parse(
+        queryStr.replace(/\b(gte|lte|gt|lt)\b/, (match) => `$${match}`)
+      );
+
+      const {
+        page = 1,
+        limit = 10,
+        sortedBy = "createdAt",
+        ...searchObject
+      } = queryObj;
+
+      const skip = +limit * (+page - 1);
+
+      const [users, usersTotalCount, usersSearchCount] = await Promise.all([
+        User.find(searchObject).limit(+limit).skip(skip).sort(sortedBy),
+        User.count(),
+        User.count(searchObject),
+      ]);
+
+      return {
+        page: +page,
+        perPage: +limit,
+        itemsCount: usersTotalCount,
+        itemsFound: usersSearchCount,
+        data: users,
+      };
+    } catch (e) {
+      throw new ApiError(e.message, e.status);
+    }
   }
 
   public async create(data: IUser): Promise<IUser> {
